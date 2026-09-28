@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>냥이 영상 싹둑이 🐾</title>
+    <!-- FFmpeg 스크립트 불러오기 -->
+    <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/dist/umd/js.js"></script>
+    <style>
+        body {
+            font-family: 'Apple SD Gothic Neo', sans-serif;
+            background-color: #fff9f5;
+            color: #333;
+            text-align: center;
+            padding: 20px;
+            margin: 0;
+        }
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+            background: white;
+            padding: 25px;
+            border-radius: 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+        }
+        h2 { color: #ff7b54; }
+        input[type="file"] {
+            display: none;
+        }
+        .file-upload-btn {
+            background-color: #ff7b54;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 10px;
+            cursor: pointer;
+            display: inline-block;
+            font-weight: bold;
+            margin: 15px 0;
+            box-shadow: 0 4px 10px rgba(255,123,84,0.3);
+        }
+        #status {
+            margin: 20px 0;
+            font-weight: bold;
+            color: #555;
+        }
+        .download-link {
+            display: block;
+            background: #4caf50;
+            color: white;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>🐾 냥이 영상 싹둑이</h2>
+    <p>3분이 넘는 냥이 밥 먹방 영상을 올리면,<br>2분 59초씩 알아서 쪼개줄게요!</p>
+    
+    <label class="file-upload-btn">
+        동영상 파일 선택하기 📂
+        <input type="file" id="uploader" accept="video/*">
+    </label>
+
+    <div id="status">준비 완료! 영상을 선택해줘 칭구야 💕</div>
+    <div id="download-zone"></div>
+</div>
+
+<script>
+    const { FFmpeg } = FFmpegWasm;
+    const { fetchFile } = FFmpegUtil;
+    let ffmpeg = null;
+
+    const uploader = document.getElementById('uploader');
+    const statusDiv = document.getElementById('status');
+    const downloadZone = document.getElementById('download-zone');
+
+    async function loadFFmpeg() {
+        if (ffmpeg) return;
+        statusDiv.innerText = "앱 엔진 준비 중... 잠시만 기다려줘! (처음엔 조금 걸려용)";
+        
+        ffmpeg = new FFmpeg();
+        
+        // 로그 확인용
+        ffmpeg.on("log", ({ message }) => {
+            console.log(message);
+        });
+
+        // 최신 CDN 경로 설정
+        await ffmpeg.load({
+            coreURL: "https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js",
+            wasmURL: "https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.wasm",
+        });
+        statusDiv.innerText = "준비 완료! 동영상을 선택해 줘 🐾";
+    }
+
+    uploader.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        await loadFFmpeg();
+
+        downloadZone.innerHTML = "";
+        statusDiv.innerText = "영상을 분석하고 쪼개는 중이야... 조금만 기다려줘! 🎬";
+
+        const inputName = 'input.mp4';
+        await ffmpeg.writeFile(inputName, await fetchFile(file));
+
+        // ffprobe 대신 파이썬처럼 순회하며 자르기 (2분 59초 = 179초)
+        // 일단 간단하게 179초 간격으로 쪼개는 명령어 실행 (segment 방식)
+        // 예: ffmpeg -i input.mp4 -c copy -map 0 -segment_time 179 -f segment output_%03d.mp4
+        
+        await ffmpeg.exec([
+            '-i', inputName,
+            '-c', 'copy',
+            '-map', '0',
+            '-segment_time', '179',
+            '-f', 'segment',
+            '-reset_timestamps', '1',
+            'output_%d.mp4'
+        ]);
+
+        statusDiv.innerText = "짜잔! 영상 나누기 완료! 아래 다운로드 버튼을 눌러줘 🎉";
+
+        // 결과 파일들 찾아서 다운로드 링크 만들기
+        // 최대 20개 파트까지 확인
+        for (let i = 0; i < 20; i++) {
+            const outName = `output_${i}.mp4`;
+            try {
+                const data = await ffmpeg.readFile(outName);
+                const blob = new Blob([data.buffer], { type: 'video/mp4' });
+                const url = URL.createObjectURL(blob);
+
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${file.name.replace(/\.[^/.]+$/, "")}_part${i + 1}.mp4`;
+                a.className = 'download-link';
+                a.innerText = `📥 ${i + 1부 파일 다운로드`;
+                downloadZone.appendChild(a);
+            } catch (err) {
+                // 파일이 더 없으면 종료
+                break;
+            }
+        }
+    });
+</script>
+
+</body>
+</html>
